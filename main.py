@@ -7,7 +7,14 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from database import engine, get_db, Base
-from crud import get_all_software, get_software_by_id, create_software, create_review
+from crud import (
+    get_all_software,
+    get_software_by_id,
+    get_software_by_name,
+    get_average_rating,
+    create_software,
+    create_review,
+)
 from schemas import SoftwareCreate, ReviewCreate
 
 
@@ -22,8 +29,6 @@ app = FastAPI(title="Software Review MVP", lifespan=lifespan)
 templates_dir = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(templates_dir))
 
-
-# ---------- Pages ----------
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request, db: Session = Depends(get_db)):
@@ -105,25 +110,28 @@ def submit_review(
     return RedirectResponse(url=f"/software/{id}", status_code=303)
 
 
-# ---------- API ----------
-
 @app.get("/api/software")
 def api_list_software(db: Session = Depends(get_db)):
     software = get_all_software(db)
-    return [
-        {
+    response = []
+    for s in software:
+        avg_rating = get_average_rating(db, s.id)
+        response.append({
             "id": s.id,
             "name": s.name,
             "description": s.description,
             "website": s.website,
             "createdAt": s.createdAt.isoformat() if s.createdAt else None,
-        }
-        for s in software
-    ]
+            "reviewCount": len(s.reviews),
+            "averageRating": round(avg_rating, 1) if avg_rating is not None else None,
+        })
+    return response
 
 
 @app.post("/api/software")
 def api_create_software(data: SoftwareCreate, db: Session = Depends(get_db)):
+    if get_software_by_name(db, data.name.strip()):
+        raise HTTPException(status_code=409, detail="Software with this name already exists")
     s = create_software(
         db,
         name=data.name,
@@ -136,6 +144,8 @@ def api_create_software(data: SoftwareCreate, db: Session = Depends(get_db)):
         "description": s.description,
         "website": s.website,
         "createdAt": s.createdAt.isoformat() if s.createdAt else None,
+        "reviewCount": 0,
+        "averageRating": None,
     }
 
 
@@ -161,6 +171,10 @@ def api_get_software(id: str, db: Session = Depends(get_db)):
         "description": software.description,
         "website": software.website,
         "createdAt": software.createdAt.isoformat() if software.createdAt else None,
+        "reviewCount": len(reviews),
+        "averageRating": round(sum(r["rating"] for r in reviews) / len(reviews), 1)
+        if reviews
+        else None,
         "reviews": reviews,
     }
 
@@ -185,3 +199,8 @@ def api_create_review(data: ReviewCreate, db: Session = Depends(get_db)):
         "comment": r.comment,
         "createdAt": r.createdAt.isoformat() if r.createdAt else None,
     }
+
+
+@app.get("/api/health")
+def api_health():
+    return {"status": "ok"}

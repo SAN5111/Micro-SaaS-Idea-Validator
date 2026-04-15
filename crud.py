@@ -17,6 +17,10 @@ def get_software_by_id(db: Session, id: str):
     return db.query(Software).filter(Software.id == id).first()
 
 
+def get_software_by_name(db: Session, name: str):
+    return db.query(Software).filter(Software.name == name).first()
+
+
 def create_software(db: Session, name: str, description: str, website: Optional[str] = None):
     s = Software(
         id=cuid(),
@@ -42,3 +46,10 @@ def create_review(db: Session, software_id: str, name: str, rating: int, comment
     db.commit()
     db.refresh(r)
     return r
+
+
+def get_average_rating(db: Session, software_id: str) -> Optional[float]:
+    rows = db.query(Review).filter(Review.softwareId == software_id).all()
+    if not rows:
+        return None
+    return sum(r.rating for r in rows) / len(rows)
